@@ -1,4 +1,5 @@
 import datetime as dt
+import re
 from datetime import timezone
 import logging as l
 from typing import Optional, Dict
@@ -135,12 +136,22 @@ async def get_company_by_email(email: str, pool: Pool) -> Optional[Company]:
     return None
 
 
+async def is_password_can_use(password: str) -> bool:
+    if len(password) < 8 or 60 < len(password):
+        return False
+    if re.match("^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$", password) is None:
+        return False
+    return True
+
+
 @ura.post("/sign-up")
 async def user_sign_up(user_data: User):
     pool = await get_pool()
     existing_user = await get_user_by_email(user_data.email, pool)
     if existing_user:
         raise tbank409a
+    if not await is_password_can_use(user_data.password):
+        raise tbank400
 
     user_data.password = await hash_password(user_data.password)
     async with pool.acquire() as conn:
@@ -181,6 +192,8 @@ async def company_sign_up(company_data: Company):
     existing_company = await get_company_by_email(company_data.email, pool)
     if existing_company:
         raise tbank409a
+    if not await is_password_can_use(company_data.password):
+        raise tbank400
 
     company_data.password = await hash_password(company_data.password)
 
