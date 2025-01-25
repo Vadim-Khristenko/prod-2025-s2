@@ -95,7 +95,17 @@ async def get_user_by_email(email: str, pool: Pool) -> Optional[User]:
             """,
             email
         )
+        other_dict = ujson.loads(user_data['other'])
 
+        user_data = {
+            "uuid": user_data['uuid'],
+            "name": user_data['name'],
+            "surname": user_data['surname'],
+            "email": user_data['email'],
+            "avatar_url": user_data['avatar_url'],
+            "other": other_dict,
+            "password": user_data['password']
+        }
         if user_data:
             user = User(**user_data)
             await rc.set(
@@ -162,7 +172,7 @@ async def user_sign_up(user_data: User):
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                 """,
                 str(user_data.uuid), user_data.name, user_data.surname,
-                user_data.email, user_data.avatar_url, user_data.other.model_dump(),
+                user_data.email, user_data.avatar_url, ujson.dumps(user_data.other.model_dump()),
                 user_data.password
             )
 
