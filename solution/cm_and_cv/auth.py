@@ -6,6 +6,7 @@ from typing import Optional, Dict
 from uuid import UUID
 import bcrypt
 import jwt
+import ujson
 from asyncpg import Pool
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
