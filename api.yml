@@ -4,6 +4,7 @@ info:
   version: "1.0"
 servers:
   - url: https://api.promocode.com/v1
+  - url: http://localhost:7515
 
 paths:
   /ping:
