@@ -1,7 +1,8 @@
 FROM python:3.12-alpine
 WORKDIR /app
 
-RUN apk add --no-cache bash
+RUN apk add --no-cache bash gcc musl-dev libffi-dev
+
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -63,6 +64,7 @@ RUN echo '#!/bin/bash' > entrypoint.sh && \
     echo 'END_TIME=$(date +%s)' >> entrypoint.sh && \
     echo 'RUN_TIME=$((END_TIME - START_TIME))' >> entrypoint.sh && \
     echo 'echo "Время выполнения: ${RUN_TIME} секунд"' >> entrypoint.sh
+
 RUN chmod +x entrypoint.sh
 
 COPY . .

@@ -1,18 +1,19 @@
 import datetime as dt
 import re
-from datetime import timezone
+from datetime import datetime, timezone, timedelta
 import logging as l
 from typing import Optional, Dict
 from uuid import UUID
-import bcrypt
-import jwt
-import ujson
+from argon2 import PasswordHasher
+import hmac, hashlib, jwt, ujson
 from asyncpg import Pool
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from avrora import rc, SECRET_KEY, get_pool, tbank401a, tbank409a, tbank400
 from cm_and_cv.auth_models import BasicModel, User, Company
+from functools import lru_cache
+from cachetools import TTLCache
 
 l.basicConfig(level=l.INFO)
 log = l.getLogger(__name__)
@@ -21,59 +22,65 @@ security = HTTPBearer()
 ura = APIRouter(prefix="/api/user/auth", tags=["user-auth"])
 cra = APIRouter(prefix="/api/business/auth", tags=["company-auth"])
 
-from functools import lru_cache
-
-
-@lru_cache(maxsize=1)
-def get_salt() -> bytes:
-    return bcrypt.gensalt()
-
+password_hasher = PasswordHasher()
+token_cache = TTLCache(maxsize=1000, ttl=3600)
 
 async def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), get_salt()).decode()
-
+    return password_hasher.hash(password)
 
 async def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(plain_password.encode(), hashed_password.encode())
-
+    try:
+        return password_hasher.verify(hashed_password, plain_password)
+    except Exception:
+        return False
 
 async def generate_jwt_token(uid: UUID, subject: str, token_type: Optional[str] = None) -> str:
-    exp_time = dt.datetime.now() + dt.timedelta(hours=6)
+    now = datetime.now(timezone.utc)
+    exp_time = now + timedelta(hours=6)
 
     payload = {
         "uid": str(uid),
         "type": token_type,
         "exp": exp_time.timestamp(),
         "subject": subject,
-        "iat": dt.datetime.now(timezone.utc).timestamp()
+        "iat": now.timestamp()
     }
 
+    token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+    token_hash = hmac.new(SECRET_KEY.encode(), token.encode(), hashlib.sha256).hexdigest()
+
     async with rc.pipeline(transaction=True) as pipe:
-        token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
-        token_hash = await hash_password(token)
-        await pipe.set(
-            f"auth:token:{uid}",
-            token_hash,
-            ex=dt.timedelta(hours=6)
-        ).execute()
+        pipe.set(f"auth:token:{uid}", token_hash, ex=int((exp_time - now).total_seconds()))
+        await pipe.execute()
 
     return token
 
-
 async def verify_jwt_token(token: str) -> Dict:
+    if token in token_cache:
+        return token_cache[token]
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         uid = payload["uid"]
 
-        stored_hash = await rc.get(f"auth:token:{uid}")
-        if not stored_hash or not await verify_password(token, stored_hash):
+        async with rc.pipeline() as pipe:
+            pipe.get(f"auth:token:{uid}")
+            result = await pipe.execute()
+
+        stored_hash = result[0]
+        if not stored_hash:
             raise tbank401a
 
-        return {
+        token_hash = hmac.new(SECRET_KEY.encode(), token.encode(), hashlib.sha256).hexdigest()
+        if stored_hash != token_hash:
+            raise tbank401a
+
+        token_cache[token] = {
             "ok": True,
             "uid": uid,
             "type": payload.get("type")
         }
+        return token_cache[token]
 
     except jwt.ExpiredSignatureError:
         raise tbank401a
@@ -173,7 +180,7 @@ async def user_sign_up(user_data: User):
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                 """,
                 str(user_data.uuid), user_data.name, user_data.surname,
-                user_data.email, user_data.avatar_url, ujson.dumps(user_data.other.model_dump()),
+                user_data.email, user_data.avatar_url, user_data.other.model_dump_json(),
                 user_data.password
             )
 

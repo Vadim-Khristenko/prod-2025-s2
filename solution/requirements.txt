@@ -4,8 +4,9 @@ asyncpg~=0.30.0
 redis~=5.2.1
 pydantic~=2.10.5
 httpx~=0.28.1
-bcrypt
+argon2-cffi
 PyJWT
+cachetools
 pycountry
 uvloop
 httptools
