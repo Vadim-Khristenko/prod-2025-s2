@@ -2,6 +2,7 @@ import datetime as dt
 import re
 from datetime import datetime, timezone, timedelta
 import logging as l
+from hmac import compare_digest
 from typing import Optional, Dict
 from uuid import UUID
 from argon2 import PasswordHasher
@@ -34,6 +35,7 @@ async def verify_password(plain_password: str, hashed_password: str) -> bool:
     except Exception:
         return False
 
+
 async def generate_jwt_token(uid: UUID, subject: str, token_type: Optional[str] = None) -> str:
     now = datetime.now(timezone.utc)
     exp_time = now + timedelta(hours=6)
@@ -47,40 +49,48 @@ async def generate_jwt_token(uid: UUID, subject: str, token_type: Optional[str] 
     }
 
     token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
-    token_hash = hmac.new(SECRET_KEY.encode(), token.encode(), hashlib.sha256).hexdigest()
-
     async with rc.pipeline(transaction=True) as pipe:
-        pipe.set(f"auth:token:{uid}", token_hash, ex=int((exp_time - now).total_seconds()))
+        pipe.set(f"auth:token:{uid}", token, ex=int((exp_time - now).total_seconds()))
         await pipe.execute()
+
+    token_cache[str(uid)] = {
+        "ok": True,
+        "uid": str(uid),
+        "type": token_type,
+        "token": token
+    }
 
     return token
 
-async def verify_jwt_token(token: str) -> Dict:
-    if token in token_cache:
-        return token_cache[token]
 
+async def verify_jwt_token(token: str) -> Dict:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         uid = payload["uid"]
+        if uid in token_cache:
+            cached_data = token_cache[uid]
+            if compare_digest(cached_data["token"], token):
+                return {
+                    "ok": True,
+                    "uid": uid,
+                    "type": cached_data["type"]
+                }
+        stored_token = await rc.get(f"auth:token:{uid}")
 
-        async with rc.pipeline() as pipe:
-            pipe.get(f"auth:token:{uid}")
-            result = await pipe.execute()
-
-        stored_hash = result[0]
-        if not stored_hash:
+        if not stored_token or compare_digest(stored_token, token) is False:
             raise tbank401a
 
-        token_hash = hmac.new(SECRET_KEY.encode(), token.encode(), hashlib.sha256).hexdigest()
-        if stored_hash != token_hash:
-            raise tbank401a
-
-        token_cache[token] = {
+        token_cache[uid] = {
+            "ok": True,
+            "uid": uid,
+            "type": payload.get("type"),
+            "token": token
+        }
+        return {
             "ok": True,
             "uid": uid,
             "type": payload.get("type")
         }
-        return token_cache[token]
 
     except jwt.ExpiredSignatureError:
         raise tbank401a
@@ -89,10 +99,13 @@ async def verify_jwt_token(token: str) -> Dict:
 
 
 async def get_user_by_email(email: str, pool: Pool) -> Optional[User]:
+    if await rc.get(f"user:existence:{email}") == "false":
+        return None
     cache_key = f"user:data:{email}"
     cached_user = await rc.get(cache_key)
 
     if cached_user:
+        await rc.set(f"user:existence:{email}", "true", ex=dt.timedelta(hours=3))
         return User.model_validate_json(cached_user)
 
     async with pool.acquire() as conn:
@@ -103,18 +116,19 @@ async def get_user_by_email(email: str, pool: Pool) -> Optional[User]:
             """,
             email
         )
-        other_dict = ujson.loads(user_data['other'])
-
-        user_data = {
-            "uuid": user_data['uuid'],
-            "name": user_data['name'],
-            "surname": user_data['surname'],
-            "email": user_data['email'],
-            "avatar_url": user_data['avatar_url'],
-            "other": other_dict,
-            "password": user_data['password']
-        }
         if user_data:
+            await rc.set(f"user:existence:{email}", "true", ex=dt.timedelta(hours=3))
+            other_dict = ujson.loads(user_data['other'])
+
+            user_data = {
+                "uuid": user_data['uuid'],
+                "name": user_data['name'],
+                "surname": user_data['surname'],
+                "email": user_data['email'],
+                "avatar_url": user_data['avatar_url'],
+                "other": other_dict,
+                "password": user_data['password']
+            }
             user = User(**user_data)
             await rc.set(
                 cache_key,
@@ -122,15 +136,19 @@ async def get_user_by_email(email: str, pool: Pool) -> Optional[User]:
                 ex=dt.timedelta(hours=1)
             )
             return user
-
+    await rc.set(f"user:existence:{email}", "false", ex=dt.timedelta(hours=3))
     return None
 
 
 async def get_company_by_email(email: str, pool: Pool) -> Optional[Company]:
+    if await rc.get(f"company:existence:{email}") == "false":
+        return None
+
     cache_key = f"company:data:{email}"
     cached_company = await rc.get(cache_key)
 
     if cached_company:
+        await rc.set(f"company:existence:{email}", "true", ex=dt.timedelta(hours=3))
         return Company.model_validate_json(cached_company)
 
     async with pool.acquire() as conn:
@@ -144,22 +162,27 @@ async def get_company_by_email(email: str, pool: Pool) -> Optional[Company]:
 
         if company_data:
             company = Company(**company_data)
+            await rc.set(f"company:existence:{email}", "true", ex=dt.timedelta(hours=3))
             await rc.set(
                 cache_key,
                 company.model_dump_json(),
                 ex=dt.timedelta(hours=1)
             )
             return company
-
+    await rc.set(f"company:existence:{email}", "false", ex=dt.timedelta(hours=3))
     return None
 
 
 async def is_password_can_use(password: str) -> bool:
     if len(password) < 8 or 60 < len(password):
         return False
-    if re.match("^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$", password) is None:
+    if re.match(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$", password) is None:
+        print(f"{password} is not valid password")
         return False
     return True
+
+
+
 
 
 @ura.post("/sign-up")
@@ -183,7 +206,7 @@ async def user_sign_up(user_data: User):
                 user_data.email, user_data.avatar_url, user_data.other.model_dump_json(),
                 user_data.password
             )
-
+    await rc.set(f"user:existence:{user_data.email}", "true", ex=dt.timedelta(hours=3))
     token = await generate_jwt_token(user_data.uuid, "user")
     return {"token": token}
 
@@ -225,7 +248,7 @@ async def company_sign_up(company_data: Company):
                 str(company_data.uuid), company_data.name,
                 company_data.email, company_data.password
             )
-
+    await rc.set(f"company:existence:{company_data.email}", "true", ex=dt.timedelta(hours=3))
     token = await generate_jwt_token(company_data.uuid, "company")
     return {"token": token, "company_id": str(company_data.uuid)}
 

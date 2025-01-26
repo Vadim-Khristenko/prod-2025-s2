@@ -34,7 +34,7 @@ async def lifespan(app: FastAPI):
                     email VARCHAR(120) NOT NULL,
                     avatar_url VARCHAR(350),
                     other JSONB NOT NULL,
-                    password VARCHAR(60) NOT NULL,
+                    password VARCHAR(128) NOT NULL,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                     CONSTRAINT users_email_unique UNIQUE (email)
                 )
@@ -53,7 +53,7 @@ async def lifespan(app: FastAPI):
                     uuid UUID PRIMARY KEY,
                     name VARCHAR(50) NOT NULL,
                     email VARCHAR(120) NOT NULL,
-                    password VARCHAR(60) NOT NULL,
+                    password VARCHAR(128) NOT NULL,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                     CONSTRAINT companies_email_unique UNIQUE (email)
                 )
