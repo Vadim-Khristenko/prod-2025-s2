@@ -6,7 +6,7 @@ import asyncpg
 from datetime import datetime
 import orjson
 
-from models.promo import (
+from models import (
     PromoCreate, PromoPatch, PromoReadOnly, PromoStat,
     PromoMode, Target, CountryStats
 )
