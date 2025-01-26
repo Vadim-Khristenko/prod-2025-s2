@@ -13,7 +13,7 @@ import asyncio
 import re
 
 from avrora import rc, SECRET_KEY, get_pool, tbank401a, tbank409a, tbank400
-from cm_and_cv.auth_models import BasicModel, User, Company
+from models import BasicModel, User, Company
 
 TOKEN_CACHE = TTLCache(maxsize=20000, ttl=3600)
 USER_CACHE = TTLCache(maxsize=20000, ttl=3600)
