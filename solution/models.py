@@ -28,6 +28,8 @@ class UTS(BaseModel):
     @classmethod
     def validate(cls, data: Dict) -> Dict:
         age = data.get("age", 0)
+        if age.is_integer() is False:
+            raise ValueError("Age must be an integer")
         if not 0 <= age <= 100:
             raise ValueError("Age must be between 0 and 100")
 
