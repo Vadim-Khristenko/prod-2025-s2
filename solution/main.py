@@ -19,6 +19,7 @@ log = l.getLogger(__name__)
 
 from avrora import get_pool, SERVER_ADDRESS, rc
 from cm_and_cv.auth import ura, cra, AuthService, EntityService
+from cm_and_cv.profile import upr
 
 
 async def init_db(conn):
@@ -126,6 +127,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
 
 app.include_router(ura)
 app.include_router(cra)
+app.include_router(upr)
 
 
 @app.get("/api/ping")
