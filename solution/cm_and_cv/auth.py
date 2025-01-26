@@ -184,7 +184,7 @@ async def verify_auth(credentials=Depends(security)) -> Dict:
 
 @ura.post("/sign-up")
 async def user_sign_up(user_data: User):
-    if not AuthService.validate_password(user_data.password):
+    if not AuthService.validate_password(user_data.password) or not user_data.avatar_url:
         raise tbank400
 
     pool = await get_pool()

@@ -11,7 +11,7 @@ EMAIL_PATTERN = re.compile(r'^[\w\.-]+@[\w\.-]+\.\w+$')
 
 @lru_cache(maxsize=300)
 def validate_country(country_code: str) -> bool:
-    return pycountry.countries.get(alpha_2=country_code) is not None
+    return pycountry.countries.get(alpha_2=country_code.lower()) is not None
 
 
 def fast_email_validate(email: str) -> bool:
@@ -34,7 +34,7 @@ class UTS(BaseModel):
         country = data.get("country", "")
         if not validate_country(country):
             raise ValueError("Invalid country code")
-
+        data["country"].lower()
         return data
 
 
@@ -80,7 +80,6 @@ class User(BasicModel):
                 r'(?:/?|[/?]\S+)$', re.IGNORECASE)
             if not url_pattern.match(self.avatar_url):
                 raise ValueError("Invalid avatar URL format")
-
         return self
 
 
