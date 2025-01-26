@@ -1,5 +1,7 @@
-from pydantic import BaseModel, Field, EmailStr, model_validator, ConfigDict
-from typing import Optional, Dict
+from datetime import datetime
+
+from pydantic import BaseModel, Field, EmailStr, model_validator, ConfigDict, UUID4
+from typing import Optional, Dict, List
 import uuid
 from uuid import UUID
 import pycountry
@@ -111,3 +113,45 @@ class UserPatch(BaseModel):
 
 class Company(BasicModel):
     name: str = Field(min_length=5, max_length=50)
+
+
+class PromoCountry(str):
+    __annotations__ = {'__args__': ['ru', 'fr', 'us', 'de', 'gb']}
+
+class PromoCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    description: Optional[str] = None
+    discount_type: str = Field(pattern='^(percentage|fixed)$')
+    discount_value: float = Field(gt=0)
+    active_from: Optional[datetime] = None
+    active_until: Optional[datetime] = None
+    countries: Optional[List[PromoCountry]] = None
+    max_usage: Optional[int] = Field(None, gt=0)
+
+class PromoPatch(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = None
+    discount_type: Optional[str] = Field(None, pattern='^(percentage|fixed)$')
+    discount_value: Optional[float] = Field(None, gt=0)
+    active_from: Optional[datetime] = None
+    active_until: Optional[datetime] = None
+    countries: Optional[List[PromoCountry]] = None
+    max_usage: Optional[int] = Field(None, gt=0)
+
+class PromoReadOnly(BaseModel):
+    id: UUID4
+    company_id: UUID
+    name: str
+    description: Optional[str]
+    discount_type: str
+    discount_value: float
+    active_from: Optional[datetime]
+    active_until: Optional[datetime]
+    countries: Optional[List[PromoCountry]]
+    max_usage: Optional[int]
+    created_at: datetime
+
+class PromoStat(BaseModel):
+    total_uses: int
+    unique_users: int
+    total_discount_amount: float

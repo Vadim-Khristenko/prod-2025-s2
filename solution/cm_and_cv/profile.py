@@ -172,5 +172,6 @@ async def update_profile(
                     return response
 
                 raise tbank401u
-    except Exception:
+    except Exception as e:
+        print(e)
         raise tbank400
